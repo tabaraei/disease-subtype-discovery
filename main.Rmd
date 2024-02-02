@@ -29,15 +29,24 @@ First of all, we will install the required packages for our program and load the
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
+# TCGA libraries
 BiocManager::install("curatedTCGAData")
 BiocManager::install("TCGAutils")
 BiocManager::install("TCGAbiolinks")
+
+# Other libraries
+install.packages("caret")
 ```
 
 ```{r message=FALSE, warning=FALSE}
+# TCGA libraries
 library("curatedTCGAData")
 library("TCGAbiolinks")
 library("TCGAutils")
+
+# Other libraries
+library("caret")
+
 ```
 
 ## Dataset Preparation
@@ -48,16 +57,14 @@ The project focuses on uncovering disease subtypes using a multi-omics dataset s
 
 Specifically, we utilize the `curatedTCGAData` @ramos2020curatedTCGAData package for our analysis to work with the **Prostate adenocarcinoma dataset** (disease code "PRAD"), considering only **3 different omics data sources** (miRNA, mRNA, and protein expression data), as they were investigated by *The Cancer Genome Atlas Research Network* @abeshouse2015molecularPRAD and their integrative clustering model (called iCluster @shen2009integrative).
 
-```{r echo=FALSE}
-assays <- c("miRNASeqGene", "RNASeq2Gene", "RPPAArray");
-suppressMessages({
-  PRAD_data <- curatedTCGAData(
-        diseaseCode = "PRAD", 
-        assays = assays, 
-        version = "2.0.1",
-        dry.run = FALSE
-      )
-})
+```{r message=FALSE, echo=FALSE}
+assays <- c("miRNASeqGene", "RNASeq2Gene", "RPPAArray")
+PRAD_data <- curatedTCGAData(
+            diseaseCode = "PRAD", 
+            assays = assays, 
+            version = "2.0.1",
+            dry.run = FALSE
+          )
 ```
 
 We have now our 3 data sources stored in a `MultiAssayExperiment` object, which contains the miRNA, mRNA, and protein expression data respectively.
@@ -68,31 +75,149 @@ PRAD_data
 
 ### Preprocessing of the data
 
-In order to preprocess the data, several steps should be taken in order:
+First, let's create a function which enables us to easily print the dimensions of the `MultiAssayExperiment` or `list` objects during the preprocessing steps:
+
+```{r}
+# creating a function to print dimensions of MAE or matrix in preprocessing steps
+printDims <- function(data, assays_list, step_type, step_number) {
+  cat("Preprocessing step ", step_number, " (", step_type, "):\n", sep="")
+  
+  # print the dimensions of each assay separately
+  for (i in 1:length(assays_list)) {
+    assay <- assays_list[[i]]
+    assay_name <- names(assays_list)[i]
+    
+    if (class(data) == "list") {
+      nrows <- dim(data[[i]])[1]
+      ncols <- dim(data[[i]])[2]
+    }
+    else {
+      nrows <- nrow(assay)
+      ncols <- ncol(assay)
+    }
+    
+    cat("Assay '", assay_name, "' Dimensions: [", nrows, ", ", ncols, "]\n", sep="")
+  }
+  
+  # print a separation line for better printing style
+  if (step_type == "after") cat(rep("-", 40), "\n")
+  else cat("\n")
+}
+```
+
+Now, we can proceed with preprocessing steps. Several steps should be taken in order, which are specified in the following:
 
 1.  We aim to **include only samples of patients with a primary tumor type** (excluding metastases, which constitute abnormal masses) to ensure having a homogeneous group of samples. According to the TCGA barcode structure, we will select samples with "Primary Solid Tumors" which are identified by the code `01` in the *sample* part of the barcode.
 
-2. We need to examine whether technical replicates are present and **exclude any duplicated patient samples** if identified. To accomplish this, we can leverage the first 12 characters of the barcode to uniquely identify patients and subsequently filter out any duplicated samples associated with them.
+    ```{r message=FALSE, warning=FALSE}
+    # 1. selecting samples with primary solid tumors
+    printDims(PRAD_data, assays(PRAD_data), "before", 1)
+    primary <- TCGAutils::TCGAsampleSelect(colnames(PRAD_data), c("01"))
+    PRAD_data <- PRAD_data[, primary, ]
+    printDims(PRAD_data, assays(PRAD_data), "after", 1)
+    ```
 
-3. There are two primary tissue preparation methods to store and preserve samples: FFPE (Formalin-Fixed Paraffin-Embedded), and freezing the samples. Due to the superior preservation of DNA and RNA molecules in frozen tissues, **samples preserved using the FFPE technique will be excluded** from further analysis.
+2.  We need to examine whether technical replicates are present and **exclude any duplicated patient samples** if identified. To accomplish this, we can leverage the first 12 characters of the barcode to uniquely identify patients and subsequently filter out any duplicated samples associated with them.
 
-4. Not every sample has all the omics data sources available. Therefore, we will limit our analysis to **samples that possess data for all the considered omics**.
+    ```{r message=FALSE, warning=FALSE}
+    # 2. checking for duplicated samples (none exists to be removed)
+    cat("Preprocessing step 2:\n")
+    check_rep <- anyReplicated(PRAD_data)
+    print(check_rep)
+    cat("There is no duplicated data to be removed\n")
+    cat(rep("-", 40), "\n")
+    ```
 
-5. In the majority of bioinformatics data sources, features are typically arranged in rows, with samples represented as columns in the matrix. To align with conventional data science practices, we will transpose the matrices, **ensuring to have features in columns and samples in rows**.
+3.  There are two primary tissue preparation methods to store and preserve samples: FFPE (Formalin-Fixed Paraffin-Embedded), and freezing the samples. Due to the superior preservation of DNA and RNA molecules in frozen tissues, **samples preserved using the FFPE technique will be excluded** from further analysis.
 
+    ```{r message=FALSE, warning=FALSE}
+    # 3. removing FFPE collected samples
+    printDims(PRAD_data, assays(PRAD_data), "before", 3)
+    no_ffpe <- which(as.data.frame(colData(PRAD_data))$patient.samples.sample.is_ffpe == "no")
+    PRAD_data <- PRAD_data[, no_ffpe, ]
+    printDims(PRAD_data, assays(PRAD_data), "after", 3)
+    ```
 
+4.  Not every sample has all the omics data sources available. Therefore, we will limit our analysis to **samples that possess data for all the considered omics**.
 
+    ```{r message=FALSE, warning=FALSE}
+    # 4. select samples having all data sources available
+    printDims(PRAD_data, assays(PRAD_data), "before", 4)
+    PRAD_data <- intersectColumns(PRAD_data)
+    printDims(PRAD_data, assays(PRAD_data), "after", 4)
+    ```
 
+5.  In the majority of bioinformatics data sources, features are typically arranged in rows, with samples represented as columns in the matrix. To align with conventional data science practices, we will transpose the matrices, **ensuring to have features in columns and samples in rows**.
 
-```{r message=FALSE, warning=FALSE}
-# selecting samples with primary solid tumors
-primary <- TCGAutils::TCGAsampleSelect(colnames(PRAD_data), c("01"))
-PRAD_data <- PRAD_data[, primary, ]
+    ```{r message=FALSE, warning=FALSE}
+    # 5. transpose the assays to have features in cols and samples in rows
+    printDims(PRAD_data, assays(PRAD_data), "before", 5)
+    PRAD_matrix <- assays(PRAD_data)
+    PRAD_matrix <- lapply(PRAD_matrix, FUN=t)
+    printDims(PRAD_matrix, assays(PRAD_data), "after", 5)
+    ```
 
-# check duplicated samples
-check_rep <- anyReplicated(PRAD_data)
-print(check_rep)
-```
+6.  Before performing any type of machine learning algorithm, the **data should be free of possible existing missing values**. In this study, since only a negligible number of features in proteomics data contain missing values, we will directly remove those features rather than using permutation techniques.
+
+    ```{r message=FALSE, warning=FALSE}
+    # 6. remove the features containing missing data
+    printDims(PRAD_matrix, assays(PRAD_data), "before", 6)
+    for (i in 1:length(PRAD_matrix)) {
+      PRAD_matrix[[i]] <- PRAD_matrix[[i]][, colSums(is.na(PRAD_matrix[[i]])) == 0]
+    }
+    printDims(PRAD_matrix, assays(PRAD_data), "after", 6)
+    ```
+
+7.  In the field of Bioinformatics, the existence of a higher number of features than samples can pose challenges for machine learning techniques, and it may lead to poor performance particularly when numerous features with significant contributions have low variance. In this study, as it is asked by the project description, we will only **select the top 100 features having highest variance from each data source**. However, this strategy overlooks feature interactions and redundancy, introducing potential limitations.
+
+    ```{r message=FALSE, warning=FALSE}
+    # 7. select top 100 highest variance features
+    printDims(PRAD_matrix, assays(PRAD_data), "before", 7)
+
+    n_features = 100
+    for(i in 1:length(PRAD_matrix)) {
+      # remove features with variance near zero
+      idx <- caret::nearZeroVar(PRAD_matrix[[i]])
+      cat("Removed ", length(idx), " features from ", names(PRAD_matrix)[i], "\n", sep="")
+      if (length(idx) != 0) PRAD_matrix[[i]] <- PRAD_matrix[[i]][, -idx]
+      if (ncol(PRAD_matrix[[i]]) <= n_features) next
+      
+      # sort and keep the top 100 highest variance features
+      vars <- apply(PRAD_matrix[[i]], 2, var)
+      idx <- sort(vars, index.return=TRUE, decreasing = TRUE)$ix
+      PRAD_matrix[[i]] <- PRAD_matrix[[i]][, idx[1:n_features]]
+    }
+
+    cat("\n")
+    printDims(PRAD_matrix, assays(PRAD_data), "after", 7)
+    ```
+
+8.  Since the omics data have been acquired with diverse measurements in various units or scales, we can perform standardization techniques to facilitate a meaningful comparison and analysis. To achieve this, we will use **z-score normalization**, which guarantees a standard normal distribution with a mean of 0 and a standard deviation of 1. The formula is $z = \frac{{x - \mu}}{{\sigma}}$, where $\mu$ represents the mean and $\sigma$ corresponds to the standard deviation.
+
+    ```{r message=FALSE, warning=FALSE}
+    # 8. apply z-score normalization
+    cat("Preprocessing step 8:\n")
+    zscore <- function(data) {
+      zscore_vec <- function(x) { return ((x - mean(x)) / sd(x)) }
+      data <- apply(data, 2, zscore_vec)
+      return(data)
+    }
+    PRAD_matrix <- lapply(PRAD_matrix, zscore)
+    cat("Normalization of the data has been performed successfully\n")
+    cat(rep("-", 40), "\n")
+    ```
+
+9.  The final step in our preprocessing pipeline is to **clean the barcodes to retain only the first 12 characters** for each individual, i.e. "Project-TSS-Participant".
+
+    ```{r message=FALSE, warning=FALSE}
+    # 9. retain first 12 characters of individual barcodes
+    cat("Preprocessing step 9:\n")
+    for(i in 1:length(PRAD_matrix)) {
+      rownames(PRAD_matrix[[i]]) <- substr(rownames(PRAD_matrix[[i]]), 1, 12)
+    }
+    cat("Barcode names have been cleaned successfully\n")
+    cat(rep("-", 40), "\n")
+    ```
 
 ### Downloading the disease subtypes
 
