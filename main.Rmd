@@ -1,0 +1,131 @@
+---
+title: "main"
+author: "Ali Tabaraei"
+date: "2024-01-31"
+bibliography: references.bib
+csl: ieee.csl
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: flatly
+    fig_caption: true
+---
+
+# Introduction
+
+text text text text text text text text text text text text
+
+# Methods
+
+text text text text text text text text text text text text
+
+## Installation of the packages
+
+First of all, we will install the required packages for our program and load them accordingly.
+
+```{r message=FALSE, warning=FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("curatedTCGAData")
+BiocManager::install("TCGAutils")
+BiocManager::install("TCGAbiolinks")
+```
+
+```{r message=FALSE, warning=FALSE}
+library("curatedTCGAData")
+library("TCGAbiolinks")
+library("TCGAutils")
+```
+
+## Dataset Preparation
+
+The project focuses on uncovering disease subtypes using a multi-omics dataset sourced from The Cancer Genome Atlas (TCGA) program @hutter2018TCGA. TCGA represents a genomics initiative that contains over 11,000 cases spanning 33 tumor types, incorporating diverse biological data sources such as mRNA expression, miRNA expression, copy number values, DNA methylation, and protein expression.
+
+### Downloading the prostate adenocarcinoma dataset
+
+Specifically, we utilize the `curatedTCGAData` @ramos2020curatedTCGAData package for our analysis to work with the **Prostate adenocarcinoma dataset** (disease code "PRAD"), considering only **3 different omics data sources** (miRNA, mRNA, and protein expression data), as they were investigated by *The Cancer Genome Atlas Research Network* @abeshouse2015molecularPRAD and their integrative clustering model (called iCluster @shen2009integrative).
+
+```{r echo=FALSE}
+assays <- c("miRNASeqGene", "RNASeq2Gene", "RPPAArray");
+suppressMessages({
+  PRAD_data <- curatedTCGAData(
+        diseaseCode = "PRAD", 
+        assays = assays, 
+        version = "2.0.1",
+        dry.run = FALSE
+      )
+})
+```
+
+We have now our 3 data sources stored in a `MultiAssayExperiment` object, which contains the miRNA, mRNA, and protein expression data respectively.
+
+```{r}
+PRAD_data
+```
+
+### Preprocessing of the data
+
+In order to preprocess the data, several steps should be taken in order:
+
+1.  We aim to **include only samples of patients with a primary tumor type** (excluding metastases, which constitute abnormal masses) to ensure having a homogeneous group of samples. According to the TCGA barcode structure, we will select samples with "Primary Solid Tumors" which are identified by the code `01` in the *sample* part of the barcode.
+
+2. We need to examine whether technical replicates are present and **exclude any duplicated patient samples** if identified. To accomplish this, we can leverage the first 12 characters of the barcode to uniquely identify patients and subsequently filter out any duplicated samples associated with them.
+
+3. There are two primary tissue preparation methods to store and preserve samples: FFPE (Formalin-Fixed Paraffin-Embedded), and freezing the samples. Due to the superior preservation of DNA and RNA molecules in frozen tissues, **samples preserved using the FFPE technique will be excluded** from further analysis.
+
+4. Not every sample has all the omics data sources available. Therefore, we will limit our analysis to **samples that possess data for all the considered omics**.
+
+5. In the majority of bioinformatics data sources, features are typically arranged in rows, with samples represented as columns in the matrix. To align with conventional data science practices, we will transpose the matrices, **ensuring to have features in columns and samples in rows**.
+
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+# selecting samples with primary solid tumors
+primary <- TCGAutils::TCGAsampleSelect(colnames(PRAD_data), c("01"))
+PRAD_data <- PRAD_data[, primary, ]
+
+# check duplicated samples
+check_rep <- anyReplicated(PRAD_data)
+print(check_rep)
+```
+
+### Downloading the disease subtypes
+
+text text text text text text text text text text text text
+
+### Check the ordering of dataset and subtypes
+
+text text text text text text text text text text text text
+
+### Integrating the data using SNF
+
+text text text text text text text text text text text text
+
+### multi-omics data integration
+
+text text text text text text text text text text text text
+
+## Clustering
+
+text text text text text text text text text text text text
+
+### Performing disease subtype discovery
+
+text text text text text text text text text text text text
+
+### Applying Spectral Clustering on the integrated matrix
+
+text text text text text text text text text text text text
+
+# Results
+
+text text text text text text text text text text text text
+
+## Comparing the clustering results
+
+text text text text text text text text text text text text
