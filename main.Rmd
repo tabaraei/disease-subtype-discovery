@@ -13,47 +13,52 @@ output:
     fig_caption: true
 ---
 
-# Introduction
+# Dataset and the packages
 
-text text text text text text text text text text text text
-
-# Methods
-
-text text text text text text text text text text text text
+Before we dig into the algorithms and the implementations, we need to set up our coding environment and prepare the dataset of our interest, which will be performed in the following.
 
 ## Installation of the packages
 
 First of all, we will install the required packages for our program and load them accordingly.
 
 ```{r message=FALSE, warning=FALSE}
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-
-# TCGA libraries
-BiocManager::install("curatedTCGAData")
-BiocManager::install("TCGAutils")
-BiocManager::install("TCGAbiolinks")
-
-# Other libraries
-install.packages("caret")
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# # TCGA libraries
+# BiocManager::install("curatedTCGAData")
+# BiocManager::install("TCGAutils")
+# BiocManager::install("TCGAbiolinks")
+# 
+# # Other libraries
+# install.packages("caret")
+# install.packages("SNFtool")
+# install.packages("NetPreProc")
+# install.packages("cluster")
+# install.packages("mclustcomp")
+# 
+# # NEMO Library
+# install.packages("devtools")
+# devtools::install_github("Shamir-Lab/NEMO/NEMO")
 ```
 
 ```{r message=FALSE, warning=FALSE}
 # TCGA libraries
 library("curatedTCGAData")
-library("TCGAbiolinks")
 library("TCGAutils")
+library("TCGAbiolinks")
 
 # Other libraries
 library("caret")
-
+library("SNFtool")
+library("NetPreProc")
+library("cluster")
+library("mclustcomp")
 ```
 
 ## Dataset Preparation
 
 The project focuses on uncovering disease subtypes using a multi-omics dataset sourced from The Cancer Genome Atlas (TCGA) program @hutter2018TCGA. TCGA represents a genomics initiative that contains over 11,000 cases spanning 33 tumor types, incorporating diverse biological data sources such as mRNA expression, miRNA expression, copy number values, DNA methylation, and protein expression.
-
-### Downloading the prostate adenocarcinoma dataset
 
 Specifically, we utilize the `curatedTCGAData` @ramos2020curatedTCGAData package for our analysis to work with the **Prostate adenocarcinoma dataset** (disease code "PRAD"), considering only **3 different omics data sources** (miRNA, mRNA, and protein expression data), as they were investigated by *The Cancer Genome Atlas Research Network* @abeshouse2015molecularPRAD and their integrative clustering model (called iCluster @shen2009integrative).
 
@@ -73,14 +78,20 @@ We have now our 3 data sources stored in a `MultiAssayExperiment` object, which 
 PRAD_data
 ```
 
-### Preprocessing of the data
+# Preprocessing of the data
 
 First, let's create a function which enables us to easily print the dimensions of the `MultiAssayExperiment` or `list` objects during the preprocessing steps:
 
 ```{r}
 # creating a function to print dimensions of MAE or matrix in preprocessing steps
-printDims <- function(data, assays_list, step_type, step_number) {
-  cat("Preprocessing step ", step_number, " (", step_type, "):\n", sep="")
+printDims <- function(data, assays_list, step_type, text) {
+  if (class(text) == "numeric") {
+    cat("Preprocessing step ", text, " (", step_type, "):\n", sep="")
+  }
+  else {
+    cat(text, " (", step_type, "):\n", sep="")
+  }
+  
   
   # print the dimensions of each assay separately
   for (i in 1:length(assays_list)) {
@@ -219,38 +230,371 @@ Now, we can proceed with preprocessing steps. Several steps should be taken in o
     cat(rep("-", 40), "\n")
     ```
 
-### Downloading the disease subtypes
+# Downloading the disease subtypes
 
-text text text text text text text text text text text text
+In order to prepare the disease subtypes, we take the following steps in order:
 
-### Check the ordering of dataset and subtypes
+1.  First, we **download the disease subtypes** having the `PRAD` code as cancer type, using the `TCGAbiolinks` package.
 
-text text text text text text text text text text text text
+    ```{r}
+    # downloading the disease subtypes
+    subtypes <- as.data.frame(TCGAbiolinks::PanCancerAtlas_subtypes())
+    subtypes <- subtypes[subtypes$cancer.type == "PRAD", ]
+    cat("Total number of subtypes: ", dim(subtypes)[1])
+    head(subtypes)
+    ```
 
-### Integrating the data using SNF
+2.  At the second step, we select and **keep only the samples of patients with a primary tumor type**.
 
-text text text text text text text text text text text text
+    ```{r}
+    cat('Dimenstions of DataFrame (before): ', dim(subtypes), "\n")
+    subtypes <- subtypes[TCGAutils::TCGAsampleSelect(subtypes$pan.samplesID, "01"), ]
+    cat('Dimenstions of DataFrame (after): ', dim(subtypes), "\n")
+    cat("All the samples have a primary tumor type", "\n")
+    cat(rep("-", 40), "\n")
+    ```
 
-### multi-omics data integration
+3.  At this step, we **retain only the first 12 characters of the barcode** for each individual existing in the multi-omics dataset, setting that as the row names of the DataFrame.
 
-text text text text text text text text text text text text
+    ```{r}
+    subtypes <- subtypes[substr(subtypes$pan.samplesID,1,12) %in% rownames(PRAD_matrix[[1]]), ]
+    rownames(subtypes) <- substr(subtypes$pan.samplesID, 1, 12)
+    head(subtypes)
+    ```
 
-## Clustering
+# Checking the ordering of the samples
 
-text text text text text text text text text text text text
+Now, we check that the patients in multi-omics dataset and subtypes are in the **same order**. This is a vital step in our implementation to avoid further errors.
 
-### Performing disease subtype discovery
+```{r}
+# put the subtypes in the same order of multi-omics dataset barcodes
+subtypes <- subtypes[rownames(PRAD_matrix[[1]]),]
+cat("Total number of subtypes: ", dim(subtypes)[1])
 
-text text text text text text text text text text text text
+# create a DataFrame comparing the barcodes of subtypes and multi-omics together
+compare_df <- as.data.frame(cbind(rownames(subtypes), rownames(PRAD_matrix[[1]])))
+names(compare_df) <- c("Subtypes", "MultiOmics")
+rownames(compare_df) <- compare_df$MultiOmics
 
-### Applying Spectral Clustering on the integrated matrix
+# add an "Exists" column, denoting if the barcode from multi-omics dataset exists in subtypes
+compare_df$Exists <- compare_df$Subtypes == compare_df$MultiOmics
+head(compare_df); tail(compare_df)
+```
 
-text text text text text text text text text text text text
+Keep in mind that not every subtype is present in the subset of samples that possess all the specified omics data sources. Using the `Exists` column which we created in the previous step, we can compare the barcodes of subtypes and multi-omics dataset together, and **eliminate the samples which do not have an associated disease subtype**.
 
-# Results
+```{r}
+selected_barcodes <- rownames(compare_df[compare_df$Exists, ])
+printDims(PRAD_matrix, assays(PRAD_data), "before", "Multi-Omics Dataset")
+subtypes <- subtypes[selected_barcodes, ]
+PRAD_matrix <- lapply(PRAD_matrix, function(assay) assay[selected_barcodes, ])
+printDims(PRAD_matrix, assays(PRAD_data), "after", "Multi-Omics Dataset")
+```
 
-text text text text text text text text text text text text
+Below, you can see the resulting number of samples for each subtype, where the subtypes reported by `Subtype_Integrative` column is the one containing the iCluster molecular subtypes:
 
+```{r}
+subtypes_count_df <- as.data.frame(table(subtypes$Subtype_Integrative))
+names(subtypes_count_df) <- c("iCluster.Subtype", "Count")
+subtypes_count_df
+```
+
+# Data Integration
+
+Several different strategies have been studied by the literature to mix and combine the different multi-omics data sources. In the following, the implementation of 3 of these strategies have been provided:
+
+## Integrating the data using SNF
+
+Recent advancements in data collection allow cost-effective gathering of diverse genome-wide data. **Similarity Network Fusion (SNF)** @wang2014similarity, efficiently combines these data types, creating a comprehensive view of diseases or biological processes. SNF constructs individual networks for each data type (e.g., mRNA expression, DNA methylation) and merges them into a unified network. This approach is exemplified in the analysis of patient cohorts, where SNF computes and fuses patient similarity networks from each data type, providing a concise yet comprehensive understanding of underlying biological mechanisms. The algorithm is described in the following:
+
+1.  First, the similarity matrix among samples of each data source $s$ (miRNA, mRNA, and protein expression data) is computed separately based on their gene expression profiles. We use the *scaled exponential Euclidean distance* @wang2014similarity as the similarity measure, where $\rho(x_i, x_j)$ is the Euclidean distance between patients $x_i$ and $x_j$, $\mu$ is a parameter, and $\varepsilon_{i,j}$ is a *scaling factor* defined as $\varepsilon_{i,j} = \frac{mean(\rho(x_i, N_i)) + mean(\rho(x_j, N_j)) + \rho(x_i, x_j)}{3}$, having $mean(\rho(x_i, N_i))$ as the average value of the distances between $x_i$ and each of its neighbors:
+
+    ```{=tex}
+        \begin{equation}
+          \label{eq:scaled_exponential_sim}
+          W(i,j) = exp \left(- \frac{\rho(x_i,x_j)^2}{\mu \varepsilon_{ij}}\right)
+        \end{equation}
+    ```
+
+2.  A *global* similarity matrix $P^{(s)}$ is derived from $W^{(s)}(i,j)$, capturing the overall relationships between samples:
+
+    ```{=tex}
+    \begin{equation}
+    \label{eq:global_kernel}
+      P^{(s)}(i,j) = 
+      \begin{cases}
+        \frac{W^{(s)}(i,j)}{2 \sum_{k \neq i} W^{(s)}(i,k)} & \text{, if $j \neq i$}\\
+        1/2 & , \text{if $j = i$}\\
+      \end{cases}       
+    \end{equation}
+    ```
+
+3.  A *local* similarity matrix $S^{(s)}$ is derived from $W^{(s)}(i,j)$, capturing the local structure of the network based on local similarities in the neighborhood (defined as $N_i = \{ x_k | x_k \in kNN(x_i) \cup \{ x_i \}\}$) of each individual, and setting to zero all the others:
+
+    ```{=tex}
+    \begin{equation}
+    \label{eq:local_kernel}
+      S^{(s)}(i,j) = 
+      \begin{cases}
+        \frac{W^{(s)}(i,j)}{\sum_{k \in N_i} W^{(s)}(i,k)} & \text{, if $j \in N_i$}\\
+        0 & , \text{otherwise}\\
+      \end{cases}       
+    \end{equation}
+    ```
+
+4.  Through an iterative process, given $s$ data sources (here $s = 3$), $s$ different $W$, $S$ and $P$ matrices are constructed where similarities are diffused through the $P$s until convergence (matrices $P$ become similar). To achieve this, for each different $s$, $P$ is updated by using $S$ from the same data source but $P$ from a different view, and vice versa. In the simplest case, when $s=2$, we have $P_t^{(s)}$ that refers to $P$ matrices for data $s \in \{ 1,2\}$ at time $t$. In this case, the following recursive updating formulas describes the diffusion process:
+
+    ```{=tex}
+    \begin{equation}
+      \label{eq:update}
+      \begin{aligned}
+        P^{(1)}_{t+1}=S^{(1)} \times P^{(2)}_{t} \times S^{(1)\top} \\
+        P^{(2)}_{t+1}=S^{(2)} \times P^{(1)}_{t} \times  S^{(2)\top}  
+      \end{aligned}
+    \end{equation}
+    ```
+
+5.  The final *integrated* matrix $P^{(c)}$ is computed by averaging as below:
+
+    ```{=tex}
+    \begin{equation}
+      \label{eq:consensus}
+      P^{(c)} = \frac{1}{s} \sum_{k=1}^{s} P^{(k)}
+    \end{equation}
+    ```
+
+The implementation of the multi-omics data integration using SNF (derived from CRAN `SNFtool` package) is provided below, where we $t = 20$ is the number of iterations, and $K = 20$ is the number of neighbors to be considered for the local similarity matrix $S^{(s)}$ computation.
+
+```{r}
+#
+n_neighbours <- 20
+n_iters <- 20
+
+# compute affinity matrices using the scaled exponential euclidean distance
+W <- list();
+for(i in 1:length(PRAD_matrix)){
+    distance <- (dist2(as.matrix(PRAD_matrix[[i]]), as.matrix(PRAD_matrix[[i]])))^(1/2);
+    W[[i]] <- affinityMatrix(distance);
+}
+
+# multi-omics data integration using SNF
+P <- SNF(W, K=n_neighbours, t=n_iters)
+```
+
+## Integrating the data using simple averaging
+
+This is the most trivial multi-omics data integration strategy than can be utilized to fuse the different similarity matrices from each data source into one, by performing a simple averaging of the matrices as:
+
+$$ W_{\text{avg}}(i,j) = \frac{1}{|\text{{data sources}}|} \sum_{s \in \text{{data sources}}} W^{(s)}(i,j) $$
+
+```{r}
+W_avg <- Reduce(`+`, W) / length(W)
+
+# Checking if it works correctly as expected
+W_avg[1,1] == (W[[1]][1, 1] + W[[2]][1, 1] + W[[3]][1, 1])/length(W)
+```
+
+## Integrating the data using NEMO (OPTIONAL)
+
+Although the implementation of `NEMO` @rappoport2019nemo clustering has been assigned to the students working as a `GROUP`, to satisfy my own curiosity, I will explore this technique as well. `NEMO` @rappoport2019nemo, standing for *NEighborhood based Multi-Omics clustering*, is a novel algorithm for multi-omics clustering. NEMO can be applied to partial datasets in which some patients have data for only a subset of the omics, without performing data imputation.
+
+Below, the computation of the NEMO affinity graph is provided:
+
+```{r}
+AF_NEMO <- NEMO::nemo.affinity.graph(PRAD_matrix, k=n_neighbours)
+```
+
+# Clustering (disease subtype discovery)
+
+We will now proceed with the implementation of a clustering algorithm to identify the disease subtypes, which we can later compare these obtained clusters with the disease subtypes investigated by iCluster.
+
+## PAM clustering
+
+PAM @PAM clustering algorithm, short for *partition around medoids*, aims to identify a set of candidate medoids which represent the center of the clusters, minimizing the average dissimilarity of objects to their closest selected medoid by iteratively selecting and swapping medoids. The process continues until no further improvement can be made, and is divided into two main phases:
+
+### Build Phase
+
+We explicitly set $k$ as the number of clusters to be found, and we attempt to find the candidate medoids to be stored in set $S$. We initialize $S$ by adding an object with minimal distances to all other objects. Then, to add other $k - 1$ elements to $S$, we perform the following steps iteratively for finding each candidate medoid:
+
+-   Let's set $O$ as the set of *all* objects, $S$ as the *selected* objects, and $U = O - S$ as *unselected* objects. Considering a new candidate $i \in U$, for all the other unselected objects $j \in U - \{ i \}$: $(1)$ compute the **distance between** $j$ and the **closest medoid** currently in $S$, namely $D_j$, and $(2)$ compute the **distance between** $j$ and the **new candidate** $i$, namely $d(i,j)$.
+-   The clustering may benefit from the new candidate $i$ if $d(i,j) < Dj$, so will aggregate the contribution of all $j$ into a total gain computed as $g_i = \sum_{j \in U} max \{(D_j - d(i,j)), 0 \}$. Consequently, we will choose the candidate $i$ maximizing $g_i$, and update the $S := S \cup \{i \}$ and $U := U - \{i \}$ accordingly.
+-   We repeat until $k$ candidates have been selected.
+
+### Swap Phase
+
+It attempts to improve the quality of the selected candidates by swapping objects between $S$ and $U$. For each pair $(i, h) \in S \times U$ (where $i \in S$ and $h \in U$) to be considered for swapping, we perform the following steps:
+
+-   We swap $i$ and $h$, as $h$ becomes a candidate and $i$ is unselected.
+-   For each object $j \in U - \{h\}$ (all except the swapped objects), $(1)$ if $d(j, i) > D_{j}$ (where $D_{j}$ is the dissimilarity between $j$ and the **closest** object in $S$), then we compute the contribution $K_{jih} = min\{d(j,h) - D_{j}, 0\}$. Otherwise, ${2)$ if $d(j, i) = D_{j}$. Then, $K_{jih} = min\{d(j,h), E_{j}\} - D_{j}$ (where $E_{j}$ is the dissimilarity between $j$ and the **second closest** object in $S$).
+-   We compute the total result of the swap as $T_{ih} = \sum\{ K_{jih} | j \in U\}$, and we select the pair $(i, h)$ minimizing $T_{ih}$.
+-   If $T_{ih} > 0$ the algorithm halts since the the objective value cannot be decreased. Otherwise, if $T_{ih} < 0$, the swap is performed, $D_{j}$ and $E_{j}$ are updated, and we jump to the first step of the "Swap" phase.
+
+### Implementation
+
+The implementation of the algorithm is provided below:
+
+```{r}
+pam_clustering <- function(matrix, k) {
+  # compute the distance, normalized within [0, 1]
+  distance_matrix <- 1 - NetPreProc::Max.Min.norm(matrix)
+  
+  # compute the PAM clustering for the given distance matrix, setting diss=TRUE
+  result <- pam(distance_matrix, k=k, diss=TRUE)
+  return (result)
+}
+```
+
+In this study, we will set the number of clusters to be found by PAM algorithm as $k = 3$, which is equal to the number of disease subtypes found by iCluster.
+
+```{r}
+k <- length(unique(subtypes_count_df$iCluster.Subtype))
+cat("The number of clusters: ", k, "\n")
+```
+
+The algorithm will be performed on the following similarity matrices:
+
+a.  Similarity matrices obtained from each single data source, which are stored in `W`
+b.  Integrated matrix obtained from averaging over matrices, which is stored in `W_avg`
+c.  Integrated matrix obtained from SNF, which is stored in `P`
+d.  Integrated matrix obtained from NEMO, which is stored in `AF_NEMO` (OPTIONAL)
+
+```{r}
+PAM_clustering_W1 <- pam_clustering(W[[1]], k)
+PAM_clustering_W2 <- pam_clustering(W[[2]], k)
+PAM_clustering_W3 <- pam_clustering(W[[3]], k)
+PAM_clustering_W_avg <- pam_clustering(W_avg, k)
+PAM_clustering_SNF <- pam_clustering(P, k)
+PAM_clustering_AF_NEMO <- pam_clustering(AF_NEMO, k)
+```
+
+## NEMO clustering (OPTIONAL)
+
+*NEMO* provides the possibility of performing clustering using another approach called *Spectral Clustering* @von2007SP. We use the function `nemo.clustering()` to test this approach as below:
+
+```{r}
+nemo_clustering <- NEMO::nemo.clustering(PRAD_matrix, num.clusters=k, num.neighbors=n_neighbours)
+```
+
+## Spectral clustering (OPTIONAL)
+
+We will perform *Spectral Clustering* on the integrated matrix obtained from Similarity Network Fusion, which is accessible by `SNFtool::spectralClustering()`.
+
+```{r}
+spectral_clustering <- SNFtool::spectralClustering(AF_NEMO, k)
+names(spectral_clustering) <- colnames(AF_NEMO)
+```
+
+# Results and comparison
+
+Now that we have different clustering results obtained from PAM, NEMO, and Spectral Clustering, we can proceed with comparing the aforementioned results with the disease subtypes reported by iCluster.
+
+## Evalation Metrics
+
+In the literature, several evaluation metrics can be found to compare the clustering results @wagner2007comparing, and using `mclustcomp` R package we can access to 24 different scores. Here, we will consider 3 of the most used techniques, which are descriped in the following:
+
+### Rand Index (RI)
+
+Given the clusters $C_1$ and $C_2$, this metric can be computed by counting the pair of objects in the same cluster in both $C_1$ and $C_2$ (denoted as $n_{11}$), along with the pair of objects in different clusters both in $C_1$ and $C_2$ (denoted as $n_{11}$), with respect to the all possible pairs. As a result, this metric is bounded within $[0, 1]$, representing similar clusters when $R(C_1, C_2)$ approaches $1$, and dissimilar clusters when near zero.
+
+```{=tex}
+\begin{equation}
+  R(C_1, C_2) = \frac{2(n_{11} + n_{00})}{n(n-1)}
+\end{equation}
+```
+### Adjusted Rand Index (ARI)
+
+The Adjusted Rand Index (ARI) is utilized to measure the similarity between two data clusterings. It is a enhancement over the Rand Index as a basic measure of similarity between two clusterings, overcoming its disadvantage of being sensitive to chance. The ARI takes into account the fact that two random partitions of a dataset should not assume a constant value, and it adjusts the Rand Index to account for this possibility. ARI ranges within $[-0.5, 1]$, where it represents identical clustering on values near $1$, and indicates independent clusterings when approaching negative values.
+
+### Normalized Mutual Information (NMI)
+
+The *Mutual Information* (MI) measures how much we can reduce uncertainty about an element's cluster when we already know its cluster in another clustering. It is defined as below, where $P(i,j)= \frac{|C_{1i} \cap C_{2j}|}{n}$ is the probability that an element belongs to cluster $C_i \in C_1$ and cluster $C_j \in C_2$:
+
+```{=tex}
+\begin{equation}
+  MI(C_1, C_2) = \sum_{i=1}^{k} \sum_{j=1}^{l} P(i,j) log_{2} \frac{P(i,j)}{P(i)P(j)}
+\end{equation}
+```
+However, since it is not upper bounded, it would be difficult to interpret the obtained results, so we use a normalized version of MI to bound it in range $[0, 1]$ (maximum NMI for identical clusterings), which is *Normalized Mutual Information* (NMI). It is defined as below, where $H(C_1)$ and $H(C_2)$ are the corresponding entropies of the clusterings $C_1$ and $C_2$:
+
+```{=tex}
+\begin{equation}
+  NMI(C_1, C_2) = \frac{MI(C_1, C_2)}{\sqrt{H(C_1) H(C_2)}}
+\end{equation}
+```
 ## Comparing the clustering results
 
-text text text text text text text text text text text text
+In this project, we covered PAM clustering algorithm over a set of different matrices, and also investigated the NEMO and spectral clustering. Now, in this final section, we will report the results of the clustering compared to the ones reported by iCluster.
+
+```{r}
+# convert the disease subtypes to numeric values
+unique_subtypes <- unique(subtypes$Subtype_Integrative)
+labels <- as.numeric(factor(subtypes$Subtype_Integrative, levels=unique_subtypes))
+
+# compute the RI, ARI, and NMI metrics over all clustering results
+types <- c("rand", "adjrand", "nmi1")
+
+# PAM clustering metrics
+metrics.PAM_clustering_W1 <- mclustcomp(PAM_clustering_W1$clustering, labels, types=types)
+metrics.PAM_clustering_W2 <- mclustcomp(PAM_clustering_W2$clustering, labels, types=types)
+metrics.PAM_clustering_W3 <- mclustcomp(PAM_clustering_W3$clustering, labels, types=types)
+metrics.PAM_clustering_W_avg <- mclustcomp(PAM_clustering_W_avg$clustering, labels, types=types)
+metrics.PAM_clustering_SNF <- mclustcomp(PAM_clustering_SNF$clustering, labels, types=types)
+# metrics.PAM_clustering_AF_NEMO <- mclustcomp(PAM_clustering_AF_NEMO$clustering, labels, types=types)
+
+# NEMO clustering metric
+# metrics.nemo_clustering <- mclustcomp(nemo_clustering, labels, types=types)
+
+# Spectral clustering metric
+# metrics.spectral_clustering <- mclustcomp(spectral_clustering, labels, types=types)
+```
+
+```{r}
+# Create a list of dataframes
+clusterings_df_list <- list(
+  metrics.PAM_clustering_W1,
+  metrics.PAM_clustering_W2,
+  metrics.PAM_clustering_W3,
+  metrics.PAM_clustering_W_avg,
+  metrics.PAM_clustering_SNF
+)
+
+# Extract scores column as list for each clustering
+metrics_scores_lists <- lapply(clusterings_df_list, function(df) as.list(df$scores))
+
+# Combine the lists into a single dataframe
+results_df <- do.call(rbind, metrics_scores_lists)
+
+# Correct the ordering of columns as expected
+colnames(results_df) <- as.list(metrics.PAM_clustering_W1$types)
+results_df <- results_df[, c("rand", "adjrand", "nmi1")]
+
+# correct the corresponding rowname/colnames
+colnames(results_df) <- c("RI", "ARI", "NMI")
+rownames(results_df) <- list(
+  "PAM_clustering_W1",
+  "PAM_clustering_W2",
+  "PAM_clustering_W3",
+  "PAM_clustering_W_avg",
+  "PAM_clustering_SNF"
+)
+
+results_df
+```
+
+It is evident that the RI metric provides more optimistic results, so it would be a valid idea to present other measures such as ARI (based on counting pairs) and NMI (based on information theory) to better interpret the results. Analyzing the results of clustering algorithms comparing to PAM50, the following observations can be made:
+
+-   PAM50 solely relies on mRNA data from different genes, whereas our clustering approach integrates multiple data sources from three distinct omics. Consequently, we have a richer dataset for clustering analysis, potentially resulting in clusters with unique biological interpretations that differ from the ones reported by PAM50.
+-   Due to the simplicity of the chosen preprocessing techniques (such as selecting the first 100 highest variance), it is probable that some of the aforementioned group of genes are removed. This could potentially complicate the identification of subgroups based on alternative features.
+
+# Session Info
+
+Below, you can find overall details about the version of R, the operating system, loaded packages, and other relevant information using the `sessionInfo()`, where a summary of the session's details are provided.
+
+```{r}
+sessionInfo()
+```
+
+# References
+
+::: {#refs}
+:::
