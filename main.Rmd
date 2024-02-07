@@ -1,5 +1,5 @@
 ---
-title: "main"
+title: "Disease subtype discovery using multi-omics data integration"
 author: "Ali Tabaraei"
 date: "2024-01-31"
 bibliography: references.bib
@@ -13,33 +13,39 @@ output:
     fig_caption: true
 ---
 
+Throughout this project, we will delve into various methodologies for uncovering molecular disease subtypes utilizing multi-omics data. The primary objective behind identifying disease subtypes is to categorize patients into cohesive groups based on similar clinical and/or molecular characteristics. By identifying these patient cohorts, we aim to enhance prognostic predictions, foreseeing the future health trajectory of individuals, and optimize treatment strategies tailored to each patient's unique profile. This endeavor aligns closely with the principles of personalized (precision) medicine, which integrates genomic, environmental, and lifestyle factors into medical decision-making processes, leading to potential targets for therapeutic interventions.
+
 # Dataset and the packages
 
 Before we dig into the algorithms and the implementations, we need to set up our coding environment and prepare the dataset of our interest, which will be performed in the following.
 
 ## Installation of the packages
 
-First of all, we will install the required packages for our program and load them accordingly.
+First of all, we set the default CRAN mirror to avoid errors while knitting the document to a HTML file. Then, we will install the required packages for our program and load them accordingly.
 
 ```{r message=FALSE, warning=FALSE}
-# if (!require("BiocManager", quietly = TRUE))
-#     install.packages("BiocManager")
-# 
-# # TCGA libraries
-# BiocManager::install("curatedTCGAData")
-# BiocManager::install("TCGAutils")
-# BiocManager::install("TCGAbiolinks")
-# 
-# # Other libraries
-# install.packages("caret")
-# install.packages("SNFtool")
-# install.packages("NetPreProc")
-# install.packages("cluster")
-# install.packages("mclustcomp")
-# 
-# # NEMO Library
-# install.packages("devtools")
-# devtools::install_github("Shamir-Lab/NEMO/NEMO")
+options(repos = list(CRAN="http://cran.rstudio.com/"))
+```
+
+```{r results="hide", message=FALSE, warning=FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+# TCGA libraries
+BiocManager::install("curatedTCGAData")
+BiocManager::install("TCGAutils")
+BiocManager::install("TCGAbiolinks")
+
+# Other libraries
+install.packages("SNFtool")
+install.packages("NetPreProc")
+install.packages("caret")
+install.packages("cluster")
+install.packages("mclustcomp")
+
+# NEMO Library
+install.packages("devtools")
+devtools::install_github("Shamir-Lab/NEMO/NEMO")
 ```
 
 ```{r message=FALSE, warning=FALSE}
@@ -49,9 +55,9 @@ library("TCGAutils")
 library("TCGAbiolinks")
 
 # Other libraries
-library("caret")
 library("SNFtool")
 library("NetPreProc")
+library("caret")
 library("cluster")
 library("mclustcomp")
 ```
@@ -65,11 +71,11 @@ Specifically, we utilize the `curatedTCGAData` @ramos2020curatedTCGAData package
 ```{r message=FALSE, echo=FALSE}
 assays <- c("miRNASeqGene", "RNASeq2Gene", "RPPAArray")
 PRAD_data <- curatedTCGAData(
-            diseaseCode = "PRAD", 
-            assays = assays, 
-            version = "2.0.1",
-            dry.run = FALSE
-          )
+  diseaseCode = "PRAD", 
+  assays = assays, 
+  version = "2.0.1",
+  dry.run = FALSE
+)
 ```
 
 We have now our 3 data sources stored in a `MultiAssayExperiment` object, which contains the miRNA, mRNA, and protein expression data respectively.
@@ -185,7 +191,7 @@ Now, we can proceed with preprocessing steps. Several steps should be taken in o
     # 7. select top 100 highest variance features
     printDims(PRAD_matrix, assays(PRAD_data), "before", 7)
 
-    n_features = 100
+    n_features <- 100
     for(i in 1:length(PRAD_matrix)) {
       # remove features with variance near zero
       idx <- caret::nearZeroVar(PRAD_matrix[[i]])
@@ -398,10 +404,11 @@ W_avg[1,1] == (W[[1]][1, 1] + W[[2]][1, 1] + W[[3]][1, 1])/length(W)
 
 Although the implementation of `NEMO` @rappoport2019nemo clustering has been assigned to the students working as a `GROUP`, to satisfy my own curiosity, I will explore this technique as well. `NEMO` @rappoport2019nemo, standing for *NEighborhood based Multi-Omics clustering*, is a novel algorithm for multi-omics clustering. NEMO can be applied to partial datasets in which some patients have data for only a subset of the omics, without performing data imputation.
 
-Below, the computation of the NEMO affinity graph is provided:
+Since the `nemo.affinity.graph()` function takes as input a matrix with features in rows and samples in columns, we need to transpose the input to this function. Below, the computation of NEMO affinity graph is provided:
 
 ```{r}
-AF_NEMO <- NEMO::nemo.affinity.graph(PRAD_matrix, k=n_neighbours)
+PRAD_matrix_transposed <- lapply(PRAD_matrix, FUN=t)
+AF_NEMO <- NEMO::nemo.affinity.graph(PRAD_matrix_transposed, k=n_neighbours)
 ```
 
 # Clustering (disease subtype discovery)
@@ -459,12 +466,12 @@ c.  Integrated matrix obtained from SNF, which is stored in `P`
 d.  Integrated matrix obtained from NEMO, which is stored in `AF_NEMO` (OPTIONAL)
 
 ```{r}
-PAM_clustering_W1 <- pam_clustering(W[[1]], k)
-PAM_clustering_W2 <- pam_clustering(W[[2]], k)
-PAM_clustering_W3 <- pam_clustering(W[[3]], k)
-PAM_clustering_W_avg <- pam_clustering(W_avg, k)
-PAM_clustering_SNF <- pam_clustering(P, k)
-PAM_clustering_AF_NEMO <- pam_clustering(AF_NEMO, k)
+PAM_miRNA <- pam_clustering(W[[1]], k)
+PAM_mRNA <- pam_clustering(W[[2]], k)
+PAM_protein <- pam_clustering(W[[3]], k)
+PAM_W_avg <- pam_clustering(W_avg, k)
+PAM_SNF <- pam_clustering(P, k)
+PAM_AF_NEMO <- pam_clustering(AF_NEMO, k)
 ```
 
 ## NEMO clustering (OPTIONAL)
@@ -472,16 +479,16 @@ PAM_clustering_AF_NEMO <- pam_clustering(AF_NEMO, k)
 *NEMO* provides the possibility of performing clustering using another approach called *Spectral Clustering* @von2007SP. We use the function `nemo.clustering()` to test this approach as below:
 
 ```{r}
-nemo_clustering <- NEMO::nemo.clustering(PRAD_matrix, num.clusters=k, num.neighbors=n_neighbours)
+NEMO_clustering <- NEMO::nemo.clustering(PRAD_matrix_transposed, num.clusters=k, num.neighbors=n_neighbours)
 ```
 
 ## Spectral clustering (OPTIONAL)
 
-We will perform *Spectral Clustering* on the integrated matrix obtained from Similarity Network Fusion, which is accessible by `SNFtool::spectralClustering()`.
+We will perform *Spectral Clustering* on the integrated matrix obtained from Similarity Network Fusion, which is accessible by `SNFtool::spectralClustering()`, where features are placed in rows and samples in columns, so we need to transpose the input to this function. Below, the computation of spectral clustering is provided:
 
 ```{r}
-spectral_clustering <- SNFtool::spectralClustering(AF_NEMO, k)
-names(spectral_clustering) <- colnames(AF_NEMO)
+Spectral_clustering <- SNFtool::spectralClustering(P, k)
+names(Spectral_clustering) <- colnames(P)
 ```
 
 # Results and comparison
@@ -490,7 +497,7 @@ Now that we have different clustering results obtained from PAM, NEMO, and Spect
 
 ## Evalation Metrics
 
-In the literature, several evaluation metrics can be found to compare the clustering results @wagner2007comparing, and using `mclustcomp` R package we can access to 24 different scores. Here, we will consider 3 of the most used techniques, which are descriped in the following:
+In the literature, several evaluation metrics can be found to compare the clustering results @wagner2007comparing, and using `mclustcomp` R package we can access to 24 different scores. Here, we will consider 3 of the most used techniques, which are described in the following:
 
 ### Rand Index (RI)
 
@@ -525,6 +532,8 @@ However, since it is not upper bounded, it would be difficult to interpret the o
 
 In this project, we covered PAM clustering algorithm over a set of different matrices, and also investigated the NEMO and spectral clustering. Now, in this final section, we will report the results of the clustering compared to the ones reported by iCluster.
 
+-   First, we will compute the aforementioned metrics RI, ARI, and NMI for all the clustering algorithms proposed comparing to the PAM50.
+
 ```{r}
 # convert the disease subtypes to numeric values
 unique_subtypes <- unique(subtypes$Subtype_Integrative)
@@ -534,57 +543,90 @@ labels <- as.numeric(factor(subtypes$Subtype_Integrative, levels=unique_subtypes
 types <- c("rand", "adjrand", "nmi1")
 
 # PAM clustering metrics
-metrics.PAM_clustering_W1 <- mclustcomp(PAM_clustering_W1$clustering, labels, types=types)
-metrics.PAM_clustering_W2 <- mclustcomp(PAM_clustering_W2$clustering, labels, types=types)
-metrics.PAM_clustering_W3 <- mclustcomp(PAM_clustering_W3$clustering, labels, types=types)
-metrics.PAM_clustering_W_avg <- mclustcomp(PAM_clustering_W_avg$clustering, labels, types=types)
-metrics.PAM_clustering_SNF <- mclustcomp(PAM_clustering_SNF$clustering, labels, types=types)
-# metrics.PAM_clustering_AF_NEMO <- mclustcomp(PAM_clustering_AF_NEMO$clustering, labels, types=types)
+metrics.PAM_miRNA <- mclustcomp(PAM_miRNA$clustering, labels, types=types)
+metrics.PAM_mRNA <- mclustcomp(PAM_mRNA$clustering, labels, types=types)
+metrics.PAM_protein <- mclustcomp(PAM_protein$clustering, labels, types=types)
+metrics.PAM_W_avg <- mclustcomp(PAM_W_avg$clustering, labels, types=types)
+metrics.PAM_SNF <- mclustcomp(PAM_SNF$clustering, labels, types=types)
+metrics.PAM_AF_NEMO <- mclustcomp(PAM_AF_NEMO$clustering, labels, types=types)
 
 # NEMO clustering metric
-# metrics.nemo_clustering <- mclustcomp(nemo_clustering, labels, types=types)
+metrics.NEMO_clustering <- mclustcomp(NEMO_clustering, labels, types=types)
 
 # Spectral clustering metric
-# metrics.spectral_clustering <- mclustcomp(spectral_clustering, labels, types=types)
+metrics.Spectral_clustering <- mclustcomp(Spectral_clustering, labels, types=types)
 ```
+
+-   As the second step, we prepare a DataFrame to report all the results in a table.
 
 ```{r}
 # Create a list of dataframes
-clusterings_df_list <- list(
-  metrics.PAM_clustering_W1,
-  metrics.PAM_clustering_W2,
-  metrics.PAM_clustering_W3,
-  metrics.PAM_clustering_W_avg,
-  metrics.PAM_clustering_SNF
+results_df <- rbind(
+  t(metrics.PAM_miRNA$scores),
+  t(metrics.PAM_mRNA$scores),
+  t(metrics.PAM_protein$scores),
+  t(metrics.PAM_W_avg$scores),
+  t(metrics.PAM_SNF$scores),
+  t(metrics.PAM_AF_NEMO$scores),
+  t(metrics.NEMO_clustering$scores),
+  t(metrics.Spectral_clustering$scores)
 )
 
-# Extract scores column as list for each clustering
-metrics_scores_lists <- lapply(clusterings_df_list, function(df) as.list(df$scores))
-
-# Combine the lists into a single dataframe
-results_df <- do.call(rbind, metrics_scores_lists)
-
 # Correct the ordering of columns as expected
-colnames(results_df) <- as.list(metrics.PAM_clustering_W1$types)
+colnames(results_df) <- as.list(metrics.PAM_miRNA$types)
 results_df <- results_df[, c("rand", "adjrand", "nmi1")]
 
 # correct the corresponding rowname/colnames
 colnames(results_df) <- c("RI", "ARI", "NMI")
 rownames(results_df) <- list(
-  "PAM_clustering_W1",
-  "PAM_clustering_W2",
-  "PAM_clustering_W3",
-  "PAM_clustering_W_avg",
-  "PAM_clustering_SNF"
+  "PAM_miRNA",
+  "PAM_mRNA",
+  "PAM_protein",
+  "PAM_W_avg",
+  "PAM_SNF",
+  "PAM_AF_NEMO",
+  "NEMO",
+  "Spectral"
 )
 
+# print the results
 results_df
 ```
 
-It is evident that the RI metric provides more optimistic results, so it would be a valid idea to present other measures such as ARI (based on counting pairs) and NMI (based on information theory) to better interpret the results. Analyzing the results of clustering algorithms comparing to PAM50, the following observations can be made:
+-   Now, We will report the results of the clustering for each different clustering method.
 
+```{r}
+barplot(
+  t(results_df),
+  beside = TRUE,
+  main = "Performance of Clustering Techniques (by clutering method)",
+  ylab = "Metric Value",
+  cex.names = 0.65,
+  las = 2,
+  legend.text = TRUE,
+  args.legend = list(title="Metric", x="topright", bty="c", cex=0.9)
+)
+```
+
+-   Finally, we can provide another plot representing each metric separately for different algorithms.
+
+```{r}
+barplot(
+  results_df,
+  beside = TRUE,
+  main = "Performance of Clustering Techniques (by evaluation metric)",
+  ylab = "Metric Value",
+  legend.text = TRUE,
+  args.legend = list(title="Clustering", x="topright", bty="c", cex=0.8)
+)
+```
+
+Analyzing the results of clustering algorithms comparing to PAM50, the following observations can be made:
+
+-   It is evident that the RI metric provides more optimistic results, so it would be a valid idea to present other measures such as ARI (based on counting pairs) and NMI (based on information theory) to better interpret the results.
 -   PAM50 solely relies on mRNA data from different genes, whereas our clustering approach integrates multiple data sources from three distinct omics. Consequently, we have a richer dataset for clustering analysis, potentially resulting in clusters with unique biological interpretations that differ from the ones reported by PAM50.
--   Due to the simplicity of the chosen preprocessing techniques (such as selecting the first 100 highest variance), it is probable that some of the aforementioned group of genes are removed. This could potentially complicate the identification of subgroups based on alternative features.
+-   Due to the simplicity of the chosen preprocessing techniques (such as selecting the first 100 highest variance, or selecting only the samples having all the 3 data sources available instead if imputing), it is probable that some of the aforementioned group of genes are removed. This could potentially complicate the identification of subgroups based on alternative features, and result in poor performance.
+- Overall, it can be seen that performing the PAM algorithm on SNF integrated matrix has the best performance among the techniques explored, following by Spectral clustering approach which also provides promising results.
 
 # Session Info
 
