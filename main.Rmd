@@ -604,7 +604,7 @@ barplot(
   cex.names = 0.65,
   las = 2,
   legend.text = TRUE,
-  args.legend = list(title="Metric", x="topright", bty="c", cex=0.9)
+  args.legend = list(title="Metric", x="topright", bty="c", cex=0.8)
 )
 ```
 
