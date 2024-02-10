@@ -148,6 +148,7 @@ Now, we can proceed with preprocessing steps. Several steps should be taken in o
 3.  There are two primary tissue preparation methods to store and preserve samples: FFPE (Formalin-Fixed Paraffin-Embedded), and freezing the samples. Due to the superior preservation of DNA and RNA molecules in frozen tissues, **samples preserved using the FFPE technique will be excluded** from further analysis.
 
     ```{r message=FALSE, warning=FALSE}
+
     # 3. removing FFPE collected samples
     printDims(PRAD_data, assays(PRAD_data), "before", 3)
     no_ffpe <- which(as.data.frame(colData(PRAD_data))$patient.samples.sample.is_ffpe == "no")
@@ -348,7 +349,7 @@ Recent advancements in data collection allow cost-effective gathering of diverse
     \end{equation}
     ```
 
-4.  Through an iterative process, given $s$ data sources (here $s = 3$), $s$ different $W$, $S$ and $P$ matrices are constructed where similarities are diffused through the $P$s until convergence (matrices $P$ become similar). To achieve this, for each different $s$, $P$ is updated by using $S$ from the same data source but $P$ from a different view, and vice versa. In the simplest case, when $s=2$, we have $P_t^{(s)}$ that refers to $P$ matrices for data $s \in \{ 1,2\}$ at time $t$. In this case, the following recursive updating formulas describes the diffusion process:
+4.  Through an iterative process, given $s$ data sources (here $s = 3$), $s$ different $W$, $S$ and $P$ matrices are constructed where similarities are diffused through the $P$s until convergence (matrices $P$ become similar). To achieve this, for each different $s$, $P$ is updated by using $S$ from the same data source but $P$ from a different view, and vice versa. In the simplest case, when $s=2$, we have $P_t^{(s)}$ that refers to $P$ matrices for data $s \in \{ 1,2\}$ at time $t$. In this case, the following recursive updating formulas describe the diffusion process:
 
     ```{=tex}
     \begin{equation}
@@ -369,7 +370,7 @@ Recent advancements in data collection allow cost-effective gathering of diverse
     \end{equation}
     ```
 
-The implementation of the multi-omics data integration using SNF (derived from CRAN `SNFtool` package) is provided below, where we $t = 20$ is the number of iterations, and $K = 20$ is the number of neighbors to be considered for the local similarity matrix $S^{(s)}$ computation.
+The implementation of the multi-omics data integration using SNF (derived from CRAN `SNFtool` package) is provided below, where $t = 20$ is the number of iterations, and $K = 20$ is the number of neighbors to be considered for the local similarity matrix $S^{(s)}$ computation.
 
 ```{r}
 #
@@ -389,7 +390,7 @@ P <- SNF(W, K=n_neighbours, t=n_iters)
 
 ## Integrating the data using simple averaging
 
-This is the most trivial multi-omics data integration strategy than can be utilized to fuse the different similarity matrices from each data source into one, by performing a simple averaging of the matrices as:
+This is the most trivial multi-omics data integration strategy that can be utilized to fuse the different similarity matrices from each data source into one, by performing a simple averaging of the matrices as:
 
 $$ W_{\text{avg}}(i,j) = \frac{1}{|\text{{data sources}}|} \sum_{s \in \text{{data sources}}} W^{(s)}(i,j) $$
 
@@ -404,7 +405,7 @@ W_avg[1,1] == (W[[1]][1, 1] + W[[2]][1, 1] + W[[3]][1, 1])/length(W)
 
 Although the implementation of `NEMO` @rappoport2019nemo clustering has been assigned to the students working as a `GROUP`, to satisfy my own curiosity, I will explore this technique as well. `NEMO` @rappoport2019nemo, standing for *NEighborhood based Multi-Omics clustering*, is a novel algorithm for multi-omics clustering. NEMO can be applied to partial datasets in which some patients have data for only a subset of the omics, without performing data imputation.
 
-Since the `nemo.affinity.graph()` function takes as input a matrix with features in rows and samples in columns, we need to transpose the input to this function. Below, the computation of NEMO affinity graph is provided:
+Since the `nemo.affinity.graph()` function takes as input a matrix with features in rows and samples in columns, we need to transpose the input to this function. Below, the computation of the NEMO affinity graph is provided:
 
 ```{r}
 PRAD_matrix_transposed <- lapply(PRAD_matrix, FUN=t)
@@ -423,7 +424,7 @@ PAM @PAM clustering algorithm, short for *partition around medoids*, aims to ide
 
 We explicitly set $k$ as the number of clusters to be found, and we attempt to find the candidate medoids to be stored in set $S$. We initialize $S$ by adding an object with minimal distances to all other objects. Then, to add other $k - 1$ elements to $S$, we perform the following steps iteratively for finding each candidate medoid:
 
--   Let's set $O$ as the set of *all* objects, $S$ as the *selected* objects, and $U = O - S$ as *unselected* objects. Considering a new candidate $i \in U$, for all the other unselected objects $j \in U - \{ i \}$: $(1)$ compute the **distance between** $j$ and the **closest medoid** currently in $S$, namely $D_j$, and $(2)$ compute the **distance between** $j$ and the **new candidate** $i$, namely $d(i,j)$.
+-   Let's set $O$ as the set of *all* objects, $S$ as the *selected* objects, and $U = O - S$ as *unselected* objects. Considering a new candidate $i \in U$, for all the other unselected objects $j \in U - \{ i \}$, first compute the **distance between** $j$ and the **closest medoid** currently in $S$, namely $D_j$, and then compute the **distance between** $j$ and the **new candidate** $i$, namely $d(i,j)$.
 -   The clustering may benefit from the new candidate $i$ if $d(i,j) < Dj$, so will aggregate the contribution of all $j$ into a total gain computed as $g_i = \sum_{j \in U} max \{(D_j - d(i,j)), 0 \}$. Consequently, we will choose the candidate $i$ maximizing $g_i$, and update the $S := S \cup \{i \}$ and $U := U - \{i \}$ accordingly.
 -   We repeat until $k$ candidates have been selected.
 
@@ -432,9 +433,9 @@ We explicitly set $k$ as the number of clusters to be found, and we attempt to f
 It attempts to improve the quality of the selected candidates by swapping objects between $S$ and $U$. For each pair $(i, h) \in S \times U$ (where $i \in S$ and $h \in U$) to be considered for swapping, we perform the following steps:
 
 -   We swap $i$ and $h$, as $h$ becomes a candidate and $i$ is unselected.
--   For each object $j \in U - \{h\}$ (all except the swapped objects), $(1)$ if $d(j, i) > D_{j}$ (where $D_{j}$ is the dissimilarity between $j$ and the **closest** object in $S$), then we compute the contribution $K_{jih} = min\{d(j,h) - D_{j}, 0\}$. Otherwise, ${2)$ if $d(j, i) = D_{j}$. Then, $K_{jih} = min\{d(j,h), E_{j}\} - D_{j}$ (where $E_{j}$ is the dissimilarity between $j$ and the **second closest** object in $S$).
+-   For each object $j \in U - \{h\}$ (all except the swapped objects), if $d(j, i) > D_{j}$ (where $D_{j}$ is the dissimilarity between $j$ and the **closest** object in $S$), then we compute the contribution $K_{jih} = min\{d(j,h) - D_{j}, 0\}$. Otherwise, if $d(j, i) = D_{j}$, then, $K_{jih} = min\{d(j,h), E_{j}\} - D_{j}$ (where $E_{j}$ is the dissimilarity between $j$ and the **second closest** object in $S$) is computed.
 -   We compute the total result of the swap as $T_{ih} = \sum\{ K_{jih} | j \in U\}$, and we select the pair $(i, h)$ minimizing $T_{ih}$.
--   If $T_{ih} > 0$ the algorithm halts since the the objective value cannot be decreased. Otherwise, if $T_{ih} < 0$, the swap is performed, $D_{j}$ and $E_{j}$ are updated, and we jump to the first step of the "Swap" phase.
+-   If $T_{ih} > 0$, the algorithm halts since the objective value cannot be decreased. Otherwise, if $T_{ih} < 0$, the swap is performed, $D_{j}$ and $E_{j}$ are updated, and we jump to the first step of the "Swap" phase.
 
 ### Implementation
 
@@ -484,7 +485,7 @@ NEMO_clustering <- NEMO::nemo.clustering(PRAD_matrix_transposed, num.clusters=k,
 
 ## Spectral clustering (OPTIONAL)
 
-We will perform *Spectral Clustering* on the integrated matrix obtained from Similarity Network Fusion, which is accessible by `SNFtool::spectralClustering()`, where features are placed in rows and samples in columns, so we need to transpose the input to this function. Below, the computation of spectral clustering is provided:
+We will perform *Spectral Clustering* on the integrated matrix obtained from Similarity Network Fusion utilizing `SNFtool::spectralClustering()`, where features are placed in rows and samples in columns, so we need to transpose the input to this function. Below, the computation of spectral clustering is provided:
 
 ```{r}
 Spectral_clustering <- SNFtool::spectralClustering(P, k)
@@ -497,7 +498,7 @@ Now that we have different clustering results obtained from PAM, NEMO, and Spect
 
 ## Evalation Metrics
 
-In the literature, several evaluation metrics can be found to compare the clustering results @wagner2007comparing, and using `mclustcomp` R package we can access to 24 different scores. Here, we will consider 3 of the most used techniques, which are described in the following:
+In the literature, several evaluation metrics can be found to compare the clustering results @wagner2007comparing, and using `mclustcomp` R package we can access 24 different scores. Here, we will consider 3 of the most used techniques, which are described in the following:
 
 ### Rand Index (RI)
 
@@ -510,7 +511,7 @@ Given the clusters $C_1$ and $C_2$, this metric can be computed by counting the 
 ```
 ### Adjusted Rand Index (ARI)
 
-The Adjusted Rand Index (ARI) is utilized to measure the similarity between two data clusterings. It is a enhancement over the Rand Index as a basic measure of similarity between two clusterings, overcoming its disadvantage of being sensitive to chance. The ARI takes into account the fact that two random partitions of a dataset should not assume a constant value, and it adjusts the Rand Index to account for this possibility. ARI ranges within $[-0.5, 1]$, where it represents identical clustering on values near $1$, and indicates independent clusterings when approaching negative values.
+The Adjusted Rand Index (ARI) is utilized to measure the similarity between two data clusterings. It is an enhancement over the Rand Index as a basic measure of similarity between two clusterings, overcoming its disadvantage of being sensitive to chance. The ARI takes into account the fact that two random partitions of a dataset should not assume a constant value, and it adjusts the Rand Index to account for this possibility. ARI ranges within $[-0.5, 1]$, where it represents identical clustering on values near $1$, and indicates independent clusterings when approaching negative values.
 
 ### Normalized Mutual Information (NMI)
 
@@ -521,7 +522,7 @@ The *Mutual Information* (MI) measures how much we can reduce uncertainty about 
   MI(C_1, C_2) = \sum_{i=1}^{k} \sum_{j=1}^{l} P(i,j) log_{2} \frac{P(i,j)}{P(i)P(j)}
 \end{equation}
 ```
-However, since it is not upper bounded, it would be difficult to interpret the obtained results, so we use a normalized version of MI to bound it in range $[0, 1]$ (maximum NMI for identical clusterings), which is *Normalized Mutual Information* (NMI). It is defined as below, where $H(C_1)$ and $H(C_2)$ are the corresponding entropies of the clusterings $C_1$ and $C_2$:
+However, since it is not upper-bounded, it would be difficult to interpret the obtained results, so we use a normalized version of MI to bound it in the range $[0, 1]$ (maximum NMI for identical clusterings), which is *Normalized Mutual Information* (NMI). It is defined as below, where $H(C_1)$ and $H(C_2)$ are the corresponding entropies of the clusterings $C_1$ and $C_2$:
 
 ```{=tex}
 \begin{equation}
@@ -599,7 +600,7 @@ results_df
 barplot(
   t(results_df),
   beside = TRUE,
-  main = "Performance of Clustering Techniques (by clutering method)",
+  main = "Performance of Clustering Techniques (by clustering method)",
   ylab = "Metric Value",
   cex.names = 0.65,
   las = 2,
@@ -625,8 +626,8 @@ Analyzing the results of clustering algorithms comparing to PAM50, the following
 
 -   It is evident that the RI metric provides more optimistic results, so it would be a valid idea to present other measures such as ARI (based on counting pairs) and NMI (based on information theory) to better interpret the results.
 -   PAM50 solely relies on mRNA data from different genes, whereas our clustering approach integrates multiple data sources from three distinct omics. Consequently, we have a richer dataset for clustering analysis, potentially resulting in clusters with unique biological interpretations that differ from the ones reported by PAM50.
--   Due to the simplicity of the chosen preprocessing techniques (such as selecting the first 100 highest variance, or selecting only the samples having all the 3 data sources available instead if imputing), it is probable that some of the aforementioned group of genes are removed. This could potentially complicate the identification of subgroups based on alternative features, and result in poor performance.
-- Overall, it can be seen that performing the PAM algorithm on SNF integrated matrix has the best performance among the techniques explored, following by Spectral clustering approach which also provides promising results.
+-   Due to the simplicity of the chosen preprocessing techniques (such as selecting the first 100 highest variance, or selecting only the samples having all the 3 data sources available instead of imputing), it is probable that some of the aforementioned group of genes are removed. This could potentially complicate the identification of subgroups based on alternative features, and result in poor performance.
+-   Overall, it can be seen that performing the PAM algorithm on SNF integrated matrix has the best performance among the techniques explored, following by Spectral clustering approach which also provides promising results.
 
 # Session Info
 
