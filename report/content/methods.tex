@@ -1,0 +1,229 @@
+
+\section{Methods}\label{sec:methods}
+
+\subsection{Dataset}
+
+The project focuses on uncovering disease subtypes using a multi-omics dataset sourced from The Cancer Genome Atlas (TCGA) program \cite{hutter2018TCGA}. TCGA represents a genomics initiative that contains over 11,000 cases spanning 33 tumor types, incorporating diverse biological data sources such as mRNA expression, miRNA expression, copy number values, DNA methylation, and protein expression.
+
+Specifically, we utilize the \verb|curatedTCGAData| \cite{ramos2020curatedTCGAData} package for our analysis to work with the \textit{Prostate adenocarcinoma dataset} (disease code "PRAD"), considering only 3 different omics data sources (miRNA, mRNA, and protein expression data), as they were investigated by \textit{The Cancer Genome Atlas Research Network} \cite{abeshouse2015molecularPRAD} and their integrative clustering model (called \textit{iCluster} \cite{shen2009integrative}).
+
+Prostate cancer is one of the most prevalent cancers among men worldwide, with considerable variability in its molecular characteristics and clinical behavior. Despite advancements in risk stratification using clinical and pathological parameters, current tools often fall short in accurately predicting disease outcomes. Molecular profiling has emerged as a promising approach to further identify prostate cancers based on their underlying genetic alterations, potentially distinguishing disease subtypes \cite{abeshouse2015molecularPRAD}.
+
+\subsection{Preprocessing}
+
+Before delving into the clustering algorithms, it is imperative to preprocess and cleanse the data to ensure optimal performance and reliability throughout the analysis. The following steps are taken sequentially:
+
+\begin{enumerate}[\IEEEsetlabelwidth{12)}]
+    \item \textbf{Select primary tumor types:} We aim to include only samples of patients with a \textit{primary} tumor type (excluding metastases, which constitute abnormal masses) to ensure having a homogeneous group of samples. According to the TCGA barcode structure, we will select samples with "Primary Solid Tumors" which are identified by the code \verb|01| in the \textit{sample} part of the barcode.
+    
+    \item \textbf{Exclude duplicated samples:} We need to examine whether technical replicates are present and exclude any duplicated patient samples if identified. To accomplish this, we can leverage the first 12 characters of the barcode to uniquely identify patients and subsequently filter out any duplicated samples associated with them. In this specific dataset, no replicated data exists.
+    
+    \item \textbf{Remove samples preserved using FFPE:} There are two primary tissue preparation methods to store and preserve samples: \textit{FFPE} (Formalin-Fixed Paraffin-Embedded), and \textit{freezing} the samples. Due to the superior preservation of DNA and RNA molecules in frozen tissues, samples preserved using the FFPE technique will be excluded from further analysis, which in our case there were none to be removed.
+    
+    \item \textbf{Select samples having all omics sources:} Not every sample has all the omics data sources available. Therefore, we will limit our analysis to samples that possess data for all the considered omics, resulting in the same number of samples for all omics sources.
+    
+    \item \textbf{Ensure having features in columns:} In the majority of Bioinformatics data sources, features are typically arranged in rows, with samples represented as columns in the matrix. To align with conventional data science practices, we will transpose the matrices, ensuring to have features in columns and samples in rows.
+    
+    \item \textbf{Remove features with missing values:} Before performing any type of machine learning algorithm, the data should be free of possible existing missing values. In this study, since only a negligible number of features in proteomics data contain missing values, we will directly remove those features rather than using permutation techniques.
+    
+    \item \textbf{Select the top 100 features having highest variance:} In the field of Bioinformatics, the existence of a higher number of features than samples can pose challenges for machine learning techniques, and it may lead to poor performance particularly when numerous features with significant contributions have low variance. In this study, as asked by the project description, we will only select the top 100 features having the highest variance from each data source. However, this strategy overlooks feature interactions and redundancy, introducing potential limitations.
+    
+    \item \textbf{Normalize the data:} Since the omics data have been acquired with diverse measurements in various units or scales, we can perform standardization techniques to facilitate a meaningful comparison and analysis. To achieve this, we will use \textit{z-score normalization}, which guarantees a standard normal distribution with a mean of 0 and a standard deviation of 1. The formula \eqref{eq:zscore} is provided below, where $\mu$ represents the mean and $\sigma$ corresponds to the standard deviation.
+    \begin{equation}
+        \label{eq:zscore}
+        z = \frac{{x - \mu}}{{\sigma}}
+    \end{equation}
+
+    \item \textbf{Clean the barcode names:} The final step in our preprocessing pipeline is to clean the barcodes to retain only the first 12 characters for each individual, i.e. "Project-TSS-Participant".
+\end{enumerate}
+
+
+\subsection{Disease subtypes}
+
+To compare our clustering results with the literature, we utilize the disease subtypes reported by PAM50\cite{PAM}. 
+
+\begin{enumerate}[\IEEEsetlabelwidth{12)}]
+    \item First, we download the disease subtypes having the \verb|PRAD| code as cancer type (Prostate adenocarcinoma), using the \verb|TCGAbiolinks| package, where the disease subtype clusters of iCluster are stored in the \verb|Subtype_Integrative| column.
+
+    \item Then, we filter out the samples of patients without a primary tumor type. Similar to the final preprocessing step, we retain only the first 12 characters of the barcode for each individual existing in the multi-omics dataset.
+
+    \item Next, we check that the patients in the multi-omics dataset and subtypes are in the same order. This is a vital step in our implementation to avoid further errors.
+
+    \item Finally, keep in mind that in our selected subset of samples (having all three data sources available), not every sample has an associated subtype. Therefore, we eliminate such samples by comparing the barcodes of subtypes and multi-omics dataset.
+\end{enumerate}
+
+Table~\ref{tab:subtypes} demonstrates the resulting number of samples for each subtype.
+
+\begin{table}[!t]
+    \centering
+    \caption{Different subtypes and their count investigated by iCluster}
+    \begin{tabular}{|c|c|}
+    \hline
+    \textbf{iCluster.Subtype} & \textbf{Count} \\
+    \hline
+    1 & 60 \\
+    2 & 83 \\
+    3 & 105 \\
+    \hline
+    \end{tabular}
+    \label{tab:subtypes}
+\end{table}
+
+
+\subsection{Data Integration}
+
+Several different strategies have been studied by the literature to mix and combine the different multi-omics data sources. In this paper, we implement three of these strategies, which are described as follows.
+
+\begin{itemize}[\IEEEsetlabelwidth{Z}]
+    \item \textbf{Integrating the data using SNF:} Recent advancements in data collection allow cost-effective gathering of diverse genome-wide data. \textit{Similarity Network Fusion} (SNF) \cite{wang2014similarity}, efficiently combines these data types, creating a comprehensive view of diseases or biological processes. SNF constructs individual networks for each data type (e.g., mRNA expression, DNA methylation) and merges them into a unified network. This approach is exemplified in the analysis of patient cohorts, where SNF computes and fuses patient similarity networks from each data type, providing a concise yet comprehensive understanding of underlying biological mechanisms. The algorithm is described in the following:
+
+    \begin{enumerate}[\IEEEsetlabelwidth{12)}]
+        \item First, the similarity matrix among samples of each data source $s$ (miRNA, mRNA, and protein expression data) is computed separately based on their gene expression profiles. We use the \textit{scaled exponential Euclidean distance} \cite{wang2014similarity} as the similarity measure:
+
+        \begin{equation}
+            \label{eq:scaled_exponential_sim}
+            W(i,j) = exp \left(- \frac{\rho(x_i,x_j)^2}{\mu \varepsilon_{ij}}\right)
+        \end{equation}
+
+        where $\rho(x_i, x_j)$ is the Euclidean distance between patients $x_i$ and $x_j$, $\mu$ is a parameter, and $\varepsilon_{i,j}$ is a \textit{scaling factor} defined as \eqref{eq:scaling_factor}, having $mean(\rho(x_i, N_i))$ as the average value of the distances between $x_i$ and each of its neighbors.
+
+        \begin{equation}
+            \begin{aligned}
+                \label{eq:scaling_factor}
+                \rho_{1} &= \text{mean}(\rho(x_i, N_i)) \\
+                \rho_{2} &= \text{mean}(\rho(x_j, N_j)) \\
+                \rho_{3} &= \rho(x_i, x_j) \\
+                \varepsilon_{i,j} &= \frac{\rho_{1} + \rho_{2} + \rho_{3}}{3}
+            \end{aligned}
+        \end{equation}
+
+        \item A \textit{global} similarity matrix $P^{(s)}$ is derived from $W^{(s)}(i,j)$, capturing the overall relationships between samples:
+
+        \begin{equation}
+        \label{eq:global_kernel}
+            P^{(s)}(i,j) = 
+                \begin{cases}
+                \frac{W^{(s)}(i,j)}{2 \sum_{k \neq i} W^{(s)}(i,k)} & \text{, if $j \neq i$}\\
+                1/2 & , \text{if $j = i$}\\
+            \end{cases}
+        \end{equation}
+        
+        \item A \textit{local} similarity matrix $S^{(s)}$ is derived from $W^{(s)}(i,j)$, capturing the local structure of the network based on local similarities in the neighborhood (defined as $N_i = \{ x_k | x_k \in kNN(x_i) \cup \{ x_i \}\}$) of each individual, and setting to zero all the others:
+
+        \begin{equation}
+        \label{eq:local_kernel}
+            S^{(s)}(i,j) = 
+            \begin{cases}
+                \frac{W^{(s)}(i,j)}{\sum_{k \in N_i} W^{(s)}(i,k)} & \text{, if $j \in N_i$}\\
+                0 & , \text{otherwise}\\
+            \end{cases}
+        \end{equation}        
+        
+        \item Through an iterative process, given $s$ data sources (here $s = 3$), $s$ different $W$, $S$ and $P$ matrices are constructed where similarities are diffused through the $P$s until convergence (matrices $P$ become similar). To achieve this, for each different $s$, $P$ is updated by using $S$ from the same data source but $P$ from a different view, and vice versa. In the simplest case, when $s=2$, we have $P_t^{(s)}$ that refers to $P$ matrices for data $s \in \{ 1,2\}$ at time $t$. In this case, the following recursive updating formulas describe the diffusion process:
+
+        \begin{equation}
+            \label{eq:update}
+            \begin{aligned}
+                P^{(1)}_{t+1}=S^{(1)} \times P^{(2)}_{t} \times S^{(1)\top} \\
+                P^{(2)}_{t+1}=S^{(2)} \times P^{(1)}_{t} \times  S^{(2)\top}  
+            \end{aligned}
+        \end{equation}
+
+        \item The final \textit{integrated} matrix $P^{(c)}$ is computed by averaging as below:
+
+        \begin{equation}
+            \label{eq:consensus}
+            P^{(c)} = \frac{1}{s} \sum_{k=1}^{s} P^{(k)}
+        \end{equation}
+    \end{enumerate}
+
+    For the implementation of the multi-omics data integration using SNF (derived from CRAN \verb|SNFtool| package), we set the number of iterations $t = 20$, and the number of neighbors $K = 20$ to be considered for the local similarity matrix $S^{(s)}$ computation.
+    
+    \item \textbf{Integrating the data using simple averaging:} This is the most trivial multi-omics data integration strategy that can be utilized to fuse the different similarity matrices from each data source into one, by performing a simple averaging of the matrices as \eqref{eq:mat_avg}:
+
+    \begin{equation}
+        \label{eq:mat_avg}
+         W_{\text{avg}}(i,j) = \frac{1}{|\text{{data sources}}|} \sum_{s \in \text{{data sources}}} W^{(s)}(i,j) 
+    \end{equation}
+
+    \item \textbf{Integrating the data using NEMO:}
+
+    NEMO \cite{rappoport2019nemo}, standing for \textit{NEighborhood based Multi-Omics clustering}, is a novel algorithm for multi-omics clustering. NEMO can be applied to partial datasets in which some patients have data for only a subset of the omics, without performing data imputation. It should be noted that the \verb|nemo.affinity.graph()| function for data integration takes as input a matrix with features in rows and samples in columns, so we need to transpose the input to this function.
+\end{itemize}
+
+
+\subsection{Clustering (disease subtype discovery)}
+
+We will now proceed with the implementation of a clustering algorithm to identify the disease subtypes, which we can later compare these obtained clusters with the disease subtypes investigated by iCluster.
+
+\begin{itemize}[\IEEEsetlabelwidth{Z}]
+    \item \textbf{PAM clustering:} PAM \cite{PAM} clustering algorithm, short for \textit{partition around medoids}, aims to identify a set of candidate medoids that represent the center of the clusters, minimizing the average dissimilarity of objects to their closest selected medoid by iteratively selecting and swapping medoids. The process continues until no further improvement can be made, and is divided into two main phases:
+
+    \begin{enumerate}[\IEEEsetlabelwidth{12)}]
+        \item \textbf{Build Phase:} We explicitly set $k$ as the number of clusters to be found, and we attempt to find the candidate medoids to be stored in set $S$. We initialize $S$ by adding an object with minimal distances to all other objects. Then, to add other $k - 1$ elements to $S$, we perform the following steps iteratively to find each candidate medoid:
+
+        \begin{enumerate}[\IEEEsetlabelwidth{12)}]
+            \item Let's set $O$ as the set of \textit{all} objects, $S$ as the \textit{selected} objects, and $U = O - S$ as \textit{unselected} objects. Considering a new candidate $i \in U$, for all the other unselected objects $j \in U - \{ i \}$, first compute the distance between $j$ and the closest medoid currently in $S$, namely $D_j$, and then compute the distance between $j$ and the new candidate $i$, namely $d(i,j)$.
+            
+            \item The clustering may benefit from the new candidate $i$ if $d(i,j) < Dj$, so will aggregate the contribution of all $j$ into a total gain computed as $g_i = \sum_{j \in U} max \{(D_j - d(i,j)), 0 \}$. Consequently, we will choose the candidate $i$ maximizing $g_i$, and update the $S := S \cup \{i \}$ and $U := U - \{i \}$ accordingly.
+            
+            \item We repeat until $k$ candidates have been selected.
+        \end{enumerate}
+
+        \item \textbf{Swap Phase:} It attempts to improve the quality of the selected candidates by swapping objects between $S$ and $U$. For each pair $(i, h) \in S \times U$ (where $i \in S$ and $h \in U$) to be considered for swapping, we perform the following steps:
+
+        \begin{enumerate}[\IEEEsetlabelwidth{12)}]
+            \item We swap $i$ and $h$, as $h$ becomes a candidate and $i$ is unselected.
+            
+            \item For each object $j \in U - \{h\}$ (all except the swapped objects), if $d(j, i) > D_{j}$ (where $D_{j}$ is the dissimilarity between $j$ and the \textit{closest} object in $S$), then we compute the contribution $K_{jih} = min\{d(j,h) - D_{j}, 0\}$. Otherwise, if $d(j, i) = D_{j}$, then, $K_{jih} = min\{d(j,h), E_{j}\} - D_{j}$ (where $E_{j}$ is the dissimilarity between $j$ and the \textit{second closest} object in $S$) is computed.
+            
+            \item We compute the total result of the swap as $T_{ih} = \sum\{ K_{jih} | j \in U\}$, and we select the pair $(i, h)$ minimizing $T_{ih}$.
+
+            \item If $T_{ih} > 0$, the algorithm halts since the objective value cannot be decreased. Otherwise, if $T_{ih} < 0$, the swap is performed, $D_{j}$ and $E_{j}$ are updated, and we jump to the first step of the "Swap" phase.
+        \end{enumerate}
+
+    \end{enumerate}
+
+    In this study, we set the number of clusters to be found by the PAM algorithm as $k = 3$, which is equal to the number of disease subtypes found by iCluster. Then, we perform this algorithm on the following similarity matrices:
+
+    \begin{enumerate}[\IEEEsetlabelwidth{12)}]
+        \item Similarity matrices obtained from each single data source. The resulting clusterings are named \verb|PAM_miRNA|, \verb|PAM_mRNA|, and \verb|PAM_protein|, respectively.
+        \item Integrated matrix obtained from averaging over matrices, where the resulting clustering is named \verb|PAM_W_avg|
+        \item Integrated matrix obtained from SNF, where the resulting clustering is named \verb|PAM_SNF|
+        \item Integrated matrix obtained from NEMO, where the resulting clustering is named \verb|PAM_AF_NEMO|
+    \end{enumerate}
+    
+    \item \textbf{NEMO clustering:} NEMO provides the possibility of performing clustering using another approach called \textit{Spectral Clustering} \cite{von2007SP}. We use the function \verb|nemo.clustering()| to test this approach. We name the resulting clustering as \verb|NEMO|.
+    
+    \item \textbf{Spectral clustering:} We perform \textit{Spectral Clustering} on the integrated matrix obtained from Similarity Network Fusion (SNF) utilizing \verb|spectralClustering()|, where the features are placed in rows and samples in columns, so we need to transpose the input to this function. We name the resulting clustering as \verb|Spectral|.
+\end{itemize}
+
+
+\subsection{Evaluation Metrics}
+
+In the literature, several evaluation metrics can be found to compare the clustering results \cite{wagner2007comparing}, and using \verb|mclustcomp| R package we can access 24 different scores. Here, we will consider 3 of the most used techniques, which are described in the following:
+
+\begin{itemize}[\IEEEsetlabelwidth{Z}]
+    \item \textbf{Rand Index (RI):} Given the clusters $C_1$ and $C_2$, this metric can be computed by counting the pair of objects in the same cluster in both $C_1$ and $C_2$ (denoted as $n_{11}$), along with the pair of objects in different clusters both in $C_1$ and $C_2$ (denoted as $n_{11}$), concerning the all possible pairs. As a result, this metric is bounded within $[0, 1]$, representing similar clusters when $R(C_1, C_2)$ approaches $1$, and dissimilar clusters when near zero.
+
+    \begin{equation}
+        R(C_1, C_2) = \frac{2(n_{11} + n_{00})}{n(n-1)}
+    \end{equation}
+
+    \item \textbf{Adjusted Rand Index (ARI):} The \textit{Adjusted Rand Index} (ARI) is utilized to measure the similarity between two data clusterings. It is an enhancement over the Rand Index as a basic measure of similarity between two clusterings, overcoming its disadvantage of being sensitive to chance. The ARI takes into account the fact that two random partitions of a dataset should not assume a constant value, and it adjusts the Rand Index to account for this possibility. ARI ranges within $[-0.5, 1]$, where it represents identical clustering on values near $1$, and indicates independent clusterings when approaching negative values.
+
+    \item \textbf{Normalized Mutual Information (NMI):} The \textit{Mutual Information} (MI) measures how much we can reduce uncertainty about an element's cluster when we already know its cluster in another clustering. It is defined as \eqref{eq:mi}, where $P(i,j)= \frac{|C_{1i} \cap C_{2j}|}{n}$ is the probability that an element belongs to cluster $C_i \in C_1$ and cluster $C_j \in C_2$:
+
+    \begin{equation}
+        MI(C_1, C_2) = \sum_{i=1}^{k} \sum_{j=1}^{l} P(i,j) log_{2} \frac{P(i,j)}{P(i)P(j)}
+        \label{eq:mi}
+    \end{equation}
+
+    However, since it is not upper-bounded, it would be difficult to interpret the obtained results, so we use a normalized version of MI to bound it in the range $[0, 1]$ (maximum NMI for identical clusterings), which is \textit{Normalized Mutual Information} (NMI). It is defined as \eqref{eq:nmi}, where $H(C_1)$ and $H(C_2)$ are the corresponding entropies of the clusterings $C_1$ and $C_2$:
+
+    \begin{equation}
+        NMI(C_1, C_2) = \frac{MI(C_1, C_2)}{\sqrt{H(C_1) H(C_2)}}
+        \label{eq:nmi}
+    \end{equation}
+    
+\end{itemize}

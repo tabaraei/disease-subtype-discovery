@@ -1,0 +1,14 @@
+
+\section{Discussion}\label{sec:discussion}
+
+The obtained results from our analysis unveil several insights into the challenges and opportunities in disease subtype discovery using multi-omics data integration. While our approach exhibited promising potential, especially with techniques like PAM and Spectral clustering coupled with multi-omics integration using SNF, the overall performance fell short of expectations. We highlight the following observations:
+
+\begin{itemize}[\IEEEsetlabelwidth{Z}]
+    \item \textbf{Limitations of preprocessing:} Firstly, the preprocessing steps applied to the multi-omics data may have been overly simplistic, leading to the loss of important information and introducing noise into the analysis. Naive data preprocessing methods may not adequately capture the complexities inherent in multi-omics datasets, thereby limiting the effectiveness of subsequent clustering algorithms.
+    
+    \item \textbf{Challenges of multi-omics data integration:} Moreover, while multi-omics integration holds promise for uncovering novel disease subtypes and identifying underlying biological mechanisms, it also introduces increased computational complexity and potential confounding factors. The heterogeneity and high-dimensional nature of multi-omics data present significant challenges in accurately capturing the underlying structure of the data and identifying meaningful clusters.
+    
+    \item \textbf{Comparison with PAM50:} Integrating diverse omics data sources introduces additional complexities in data normalization, feature selection, and algorithm parameter tuning, which may not have been fully addressed in our analysis. As a result, comparing such integrated matrix from multi-omics sources with the PAM50 results comprising only mRNA expression data poses its own set of challenges.
+    
+    \item \textbf{Insights for future research:} In conclusion, while our study provides valuable insights into the potential of multi-omics data integration for disease subtype discovery, the modest performance of our approach underscores the need for more sophisticated preprocessing techniques and algorithmic frameworks tailored to the complexities of multi-omics data. Future research efforts should focus on developing robust methods for data preprocessing, feature selection, and clustering analysis to unlock the full potential of multi-omics data in precision medicine applications.
+\end{itemize}
