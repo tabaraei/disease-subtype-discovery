@@ -3,9 +3,11 @@
 Throughout this project, we explore methodologies for uncovering molecular disease subtypes using multi-omics data. The primary goal is to identify cohesive patient groups based on similar clinical and/or molecular characteristics. This facilitates improved prognostic predictions and personalized treatment strategies, aligning with the principles of personalized (precision) medicine.
 
 > [!IMPORTANT]
-> In order to preview the project codebase without installing `R`, click on the button below:
 > 
-> [![View Project Results](https://img.shields.io/badge/View%20Project%20Results-HTML-blue)](https://htmlpreview.github.io/?https://github.com/tabaraei/disease-subtype-discovery/blob/master/main.html)
+> | Instructions | Link |
+> |--------------|------|
+> | Preview the project codebase without installing `R` | [![View the Project Results](https://img.shields.io/badge/View%20Project%20Results-HTML-blue)](https://htmlpreview.github.io/?https://github.com/tabaraei/disease-subtype-discovery/blob/master/main.html) |
+> | Preview the LaTeX report paper of the project | [![Read the Paper](https://img.shields.io/badge/Read%20the%20Paper-PDF-red)](https://github.com/tabaraei/disease-subtype-discovery/blob/master/report/report.pdf) |
 
 ## Installation
 - This project was developed and tested on `R` language (version 4.3.2). In order to run the code locally, make sure you have `R` and `RStudio` installed on your machine.
